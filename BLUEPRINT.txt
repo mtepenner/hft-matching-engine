@@ -1,0 +1,64 @@
+hft-matching-engine/
+│
+├── .github/                             # CI/CD for low-latency performance regression
+│   └── workflows/
+│       ├── bench-latency.yml            # Runs micro-benchmarks to ensure <500ns matching logic
+│       └── build-system.yml
+│
+├── exchange_core/                       # C++ or Rust: The Ultra-Low Latency Matching Engine
+│   ├── src/
+│   │   ├── main.cpp                     # Core entry: Pins the process to a specific CPU core
+│   │   ├── engine/
+│   │   │   ├── order_book.cpp           # Optimized Price-Time Priority Limit Order Book
+│   │   │   └── matcher.cpp              # The logic that crosses Buy/Sell orders
+│   │   ├── data_structures/
+│   │   │   └── lockfree_ring_buffer.hpp # LMAX Disruptor-style MPMC or SPSC queue
+│   │   ├── network/
+│   │   │   └── kernel_bypass_udp.cpp    # (Advanced) Optional DPDK/Solarflare ef_vi implementation
+│   │   └── memory/
+│   │       └── object_pool.hpp          # Pre-allocated memory to avoid heap allocation during trading
+│   ├── include/
+│   └── CMakeLists.txt
+│
+├── fix_gateway/                         # Go: The Financial Information eXchange Translator
+│   ├── cmd/
+│   │   └── gateway/
+│   │       └── main.go                  # Handles TCP FIX connections from external clients
+│   ├── internal/
+│   │   ├── protocol/
+│   │   │   └── fix_parser.go            # Binary-fast parsing of FIX tag-value pairs
+│   │   └── sequencer/
+│   │       └── disruptor_client.go      # Pushes orders into the C++ core via Shared Memory
+│   ├── go.mod
+│   └── Dockerfile
+│
+├── market_data_api/                     # Go: Broadcasts the Order Book and Ticker Tape
+│   ├── app/
+│   │   ├── broadcaster/
+│   │   │   └── websocket_server.go      # Streams L2/L3 order book updates to the UI
+│   │   └── aggregator/
+│   │       └── candlesticks.go          # Aggregates trades into OHLC bars (Open, High, Low, Close)
+│   └── main.go
+│
+├── trading_terminal/                    # React + TypeScript: The High-Performance UI
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── DepthChart.tsx           # WebGL/Canvas visualization of the Buy/Sell walls
+│   │   │   ├── OrderEntry.tsx           # Low-latency input for manual trade testing
+│   │   │   └── TickerTape.tsx           # Scrolling list of the most recent executed trades
+│   │   ├── rendering/
+│   │   │   └── fast_table_renderer.ts   # Optimized React rendering to prevent DOM bottlenecks
+│   │   ├── App.tsx
+│   │   └── index.tsx
+│   ├── package.json
+│   └── Dockerfile
+│
+├── scripts/
+│   ├── load_tester.py                   # Injects 100,000 orders/sec to test engine stability
+│   └── core_pinning.sh                  # Shell script to isolate CPU cores for the engine
+├── docker-compose.yml                   # Boots the Gateway, API, and UI (Engine runs natively)
+├── Makefile
+└── README.md
+
+
+
