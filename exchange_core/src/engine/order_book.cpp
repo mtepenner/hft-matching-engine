@@ -36,13 +36,21 @@ OrderId OrderBook::addOrder(ClientId clientId, Side side, Price price, Quantity 
 
     if (!o->isFilled() && type == OrderType::Limit) {
         // Rest the order in the book
-        auto& bookSide = (side == Side::Buy) ? bids_ : asks_;
-        auto& level = bookSide[o->price];
-        level.price    = o->price;
-        level.totalQty += o->remainingQty();
-        level.orders.push_back(o);
-        auto it = std::prev(level.orders.end());
-        orderIndex_[o->id] = {side, it};
+        if (side == Side::Buy) {
+            auto& level = bids_[o->price];
+            level.price    = o->price;
+            level.totalQty += o->remainingQty();
+            level.orders.push_back(o);
+            auto it = std::prev(level.orders.end());
+            orderIndex_[o->id] = std::make_pair(side, it);
+        } else {
+            auto& level = asks_[o->price];
+            level.price    = o->price;
+            level.totalQty += o->remainingQty();
+            level.orders.push_back(o);
+            auto it = std::prev(level.orders.end());
+            orderIndex_[o->id] = std::make_pair(side, it);
+        }
     } else if (type == OrderType::IOC || type == OrderType::Market) {
         if (!o->isFilled()) {
             o->status = OrderStatus::Cancelled;
@@ -60,11 +68,21 @@ bool OrderBook::cancelOrder(OrderId orderId) {
     auto [side, listIt] = it->second;
     Order* o = *listIt;
 
-    auto& bookSide = (side == Side::Buy) ? bids_ : asks_;
-    auto& level = bookSide[o->price];
-    level.totalQty -= o->remainingQty();
-    level.orders.erase(listIt);
-    if (level.orders.empty()) bookSide.erase(o->price);
+    if (side == Side::Buy) {
+        auto levelIt = bids_.find(o->price);
+        if (levelIt == bids_.end()) return false;
+        auto& level = levelIt->second;
+        level.totalQty -= o->remainingQty();
+        level.orders.erase(listIt);
+        if (level.orders.empty()) bids_.erase(levelIt);
+    } else {
+        auto levelIt = asks_.find(o->price);
+        if (levelIt == asks_.end()) return false;
+        auto& level = levelIt->second;
+        level.totalQty -= o->remainingQty();
+        level.orders.erase(listIt);
+        if (level.orders.empty()) asks_.erase(levelIt);
+    }
 
     orderIndex_.erase(it);
     o->status = OrderStatus::Cancelled;
@@ -82,8 +100,11 @@ bool OrderBook::modifyOrder(OrderId orderId, Quantity newQty) {
     o->qty = newQty;
 
     auto [side, _] = it->second;
-    auto& bookSide = (side == Side::Buy) ? bids_ : asks_;
-    bookSide[o->price].totalQty -= delta;
+    if (side == Side::Buy) {
+        bids_[o->price].totalQty -= delta;
+    } else {
+        asks_[o->price].totalQty -= delta;
+    }
     return true;
 }
 
@@ -119,46 +140,85 @@ std::vector<Trade> OrderBook::drainTrades() {
 }
 
 void OrderBook::matchOrder(Order* aggressor) {
-    auto& contra = (aggressor->side == Side::Buy) ? asks_ : bids_;
+    if (aggressor->side == Side::Buy) {
+        auto& contra = asks_;
 
-    while (!aggressor->isFilled() && !contra.empty()) {
-        auto& [topPrice, level] = *contra.begin();
+        while (!aggressor->isFilled() && !contra.empty()) {
+            auto& [topPrice, level] = *contra.begin();
 
-        // Check if prices cross
-        bool crosses = (aggressor->side == Side::Buy)
-            ? aggressor->price >= topPrice
-            : aggressor->price <= topPrice;
+            // Check if prices cross
+            bool crosses = aggressor->price >= topPrice;
+            if (!crosses) break;
 
-        if (!crosses) break;
+            while (!level.orders.empty() && !aggressor->isFilled()) {
+                Order* passive = level.orders.front();
+                Quantity fillQty = std::min(aggressor->remainingQty(), passive->remainingQty());
 
-        while (!level.orders.empty() && !aggressor->isFilled()) {
-            Order* passive = level.orders.front();
-            Quantity fillQty = std::min(aggressor->remainingQty(), passive->remainingQty());
+                aggressor->filledQty += fillQty;
+                passive->filledQty   += fillQty;
+                level.totalQty       -= fillQty;
 
-            aggressor->filledQty += fillQty;
-            passive->filledQty   += fillQty;
-            level.totalQty       -= fillQty;
+                Trade t;
+                t.aggressorId = aggressor->id;
+                t.passiveId   = passive->id;
+                t.price       = topPrice;
+                t.qty         = fillQty;
+                t.timestamp   = aggressor->timestamp;
+                pendingTrades_.push_back(t);
 
-            Trade t;
-            t.aggressorId = aggressor->id;
-            t.passiveId   = passive->id;
-            t.price       = topPrice;
-            t.qty         = fillQty;
-            t.timestamp   = aggressor->timestamp;
-            pendingTrades_.push_back(t);
+                if (passive->isFilled()) {
+                    passive->status = OrderStatus::Filled;
+                    orderIndex_.erase(passive->id);
+                    level.orders.pop_front();
+                    pool_.release(passive);
+                } else {
+                    passive->status = OrderStatus::PartialFill;
+                }
+            }
 
-            if (passive->isFilled()) {
-                passive->status = OrderStatus::Filled;
-                orderIndex_.erase(passive->id);
-                level.orders.pop_front();
-                pool_.release(passive);
-            } else {
-                passive->status = OrderStatus::PartialFill;
+            if (level.orders.empty()) {
+                contra.erase(contra.begin());
             }
         }
+    } else {
+        auto& contra = bids_;
 
-        if (level.orders.empty()) {
-            contra.erase(contra.begin());
+        while (!aggressor->isFilled() && !contra.empty()) {
+            auto& [topPrice, level] = *contra.begin();
+
+            // Check if prices cross
+            bool crosses = aggressor->price <= topPrice;
+            if (!crosses) break;
+
+            while (!level.orders.empty() && !aggressor->isFilled()) {
+                Order* passive = level.orders.front();
+                Quantity fillQty = std::min(aggressor->remainingQty(), passive->remainingQty());
+
+                aggressor->filledQty += fillQty;
+                passive->filledQty   += fillQty;
+                level.totalQty       -= fillQty;
+
+                Trade t;
+                t.aggressorId = aggressor->id;
+                t.passiveId   = passive->id;
+                t.price       = topPrice;
+                t.qty         = fillQty;
+                t.timestamp   = aggressor->timestamp;
+                pendingTrades_.push_back(t);
+
+                if (passive->isFilled()) {
+                    passive->status = OrderStatus::Filled;
+                    orderIndex_.erase(passive->id);
+                    level.orders.pop_front();
+                    pool_.release(passive);
+                } else {
+                    passive->status = OrderStatus::PartialFill;
+                }
+            }
+
+            if (level.orders.empty()) {
+                contra.erase(contra.begin());
+            }
         }
     }
 
