@@ -1,0 +1,57 @@
+version: '3.9'
+
+services:
+  exchange_core:
+    build:
+      context: ./exchange_core
+      dockerfile: Dockerfile
+    container_name: exchange_core
+    ports:
+      - "7700:7700"
+    cpuset: "2,3"
+    ulimits:
+      rtprio: 99
+    networks:
+      - hft_net
+
+  fix_gateway:
+    build:
+      context: ./fix_gateway
+      dockerfile: Dockerfile
+    container_name: fix_gateway
+    ports:
+      - "9878:9878"
+    depends_on:
+      - exchange_core
+    networks:
+      - hft_net
+
+  market_data_api:
+    build:
+      context: ./market_data_api
+      dockerfile: Dockerfile
+    container_name: market_data_api
+    ports:
+      - "8080:8080"
+    depends_on:
+      - exchange_core
+    networks:
+      - hft_net
+
+  trading_terminal:
+    build:
+      context: ./trading_terminal
+      dockerfile: Dockerfile
+    container_name: trading_terminal
+    ports:
+      - "3000:80"
+    environment:
+      - VITE_WS_URL=ws://localhost:8080/ws
+    depends_on:
+      - market_data_api
+    networks:
+      - hft_net
+
+networks:
+  hft_net:
+    driver: bridge
