@@ -25,7 +25,7 @@ jobs:
       - name: Run order-throughput benchmark
         run: |
           set -euo pipefail
-          exchange_core/build/exchange_core 0 | tee bench_output.txt
+          exchange_core/build/exchange_core | tee bench_output.txt
           grep -E "\[ExchangeCore\].*orders/sec" bench_output.txt
           grep -E "\[ExchangeCore\].*trades executed" bench_output.txt
 

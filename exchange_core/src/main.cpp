@@ -1,5 +1,5 @@
 #include "engine/order_book.hpp"
-#include "engine/matcher.cpp"
+#include "engine/matcher.hpp"
 #include <iostream>
 #include <thread>
 #include <vector>
@@ -9,23 +9,31 @@
 #ifdef __linux__
 #include <sched.h>
 #include <pthread.h>
+#include <unistd.h>
 
-static void pinToCore(int core) {
+static bool pinToCore(int core) {
+    if (core < 0) return false;
+    long cpuCount = sysconf(_SC_NPROCESSORS_ONLN);
+    if (cpuCount <= 0 || core >= cpuCount) return false;
     cpu_set_t cpuset;
     CPU_ZERO(&cpuset);
     CPU_SET(core, &cpuset);
-    pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
+    return pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset) == 0;
 }
 #else
-static void pinToCore(int) {} // no-op on non-Linux
+static bool pinToCore(int) { return false; }
 #endif
 
 int main(int argc, char* argv[]) {
     int coreId = 2; // default to core 2 (0,1 often reserved for OS)
     if (argc > 1) coreId = std::atoi(argv[1]);
 
-    pinToCore(coreId);
-    std::cout << "[ExchangeCore] Pinned to CPU core " << coreId << "\n";
+    if (pinToCore(coreId)) {
+        std::cout << "[ExchangeCore] Pinned to CPU core " << coreId << "\n";
+    } else {
+        std::cout << "[ExchangeCore] CPU pinning unavailable for core "
+                  << coreId << ", continuing without affinity\n";
+    }
 
     std::vector<std::string> symbols = {"AAPL", "MSFT", "TSLA", "SPY", "QQQ"};
     hft::Matcher matcher(symbols);
