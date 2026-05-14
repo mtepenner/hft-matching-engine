@@ -15,11 +15,10 @@ jobs:
       - name: Install deps
         run: sudo apt-get update && sudo apt-get install -y cmake g++ make python3
 
-      - name: Build exchange_core (Release + O3)
+      - name: Build exchange_core (Release)
         run: |
           cmake -B exchange_core/build -S exchange_core \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_CXX_FLAGS="-O3 -march=native"
+            -DCMAKE_BUILD_TYPE=Release
           cmake --build exchange_core/build -j$(nproc)
 
       - name: Run order-throughput benchmark

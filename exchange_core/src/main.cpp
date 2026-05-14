@@ -5,6 +5,7 @@
 #include <vector>
 #include <chrono>
 #include <cstring>
+#include <cstdlib>
 
 #ifdef __linux__
 #include <sched.h>

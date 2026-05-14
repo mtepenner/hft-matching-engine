@@ -4,8 +4,13 @@ project(exchange_core CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Aggressive optimisation flags for ultra-low latency
-add_compile_options(-O3 -march=native -mtune=native -fno-omit-frame-pointer)
+option(HFT_NATIVE_OPTIMIZATION "Enable CPU-specific optimizations" OFF)
+
+add_compile_options(-O3 -fno-omit-frame-pointer)
+
+if(HFT_NATIVE_OPTIMIZATION)
+    add_compile_options(-march=native -mtune=native)
+endif()
 
 include_directories(include)
 
