@@ -24,8 +24,10 @@ jobs:
 
       - name: Run order-throughput benchmark
         run: |
+          set -euo pipefail
           exchange_core/build/exchange_core 0 | tee bench_output.txt
-          grep -E "orders/sec|trades" bench_output.txt
+          grep -E "\[ExchangeCore\].*orders/sec" bench_output.txt
+          grep -E "\[ExchangeCore\].*trades executed" bench_output.txt
 
       - name: Upload benchmark artifact
         uses: actions/upload-artifact@v4
